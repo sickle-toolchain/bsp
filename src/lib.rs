@@ -96,7 +96,7 @@ impl<'a> Bsp<'a> {
   }
 }
 
-impl<'a> std::fmt::Debug for Bsp<'a> {
+impl std::fmt::Debug for Bsp<'_> {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     f.debug_struct("Bsp")
       .field("identifier", &self.identifier)
