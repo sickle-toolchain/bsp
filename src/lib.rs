@@ -66,12 +66,15 @@ impl<'a> Bsp<'a> {
 
     // Construct array of (&'a LumpEntry, Cow<'a, [u8]>) from lump entries
     let lumps = array::from_fn(|i| {
-      let entry = &lump_entries[i];
+      let entry @ &LumpEntry {
+        range: LumpRange { offset, length },
+        ..
+      } = &lump_entries[i];
 
       // Adjust lump entry offset since they're absolute but we're indexing relative to the end of `Header`
       // TODO: add debug assertions
-      let offset = entry.range.offset as usize - size_of::<Header>();
-      let lump = Cow::from(&data[offset..offset + entry.range.length as usize]);
+      let offset = (offset as usize).saturating_sub(size_of::<Header>());
+      let lump = Cow::from(&data[offset..offset + length as usize]);
 
       (entry, lump)
     });
