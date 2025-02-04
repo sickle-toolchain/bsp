@@ -7,16 +7,7 @@ pub const LUMP_COUNT: usize = 64;
 
 type Lump<'a> = Cow<'a, [u8]>;
 
-/// Entry describing a BSP lump
-#[derive(FromBytes, IntoBytes, KnownLayout, Debug)]
-#[repr(C)]
-pub(crate) struct LumpDescriptor {
-  /// Absolute offset in file
-  offset: u32,
-  /// Length of data
-  length: u32,
-}
-
+/// Metadata of a BSP lump
 #[derive(FromBytes, IntoBytes, KnownLayout, Debug)]
 #[repr(C)]
 pub struct LumpMetadata {
@@ -26,9 +17,16 @@ pub struct LumpMetadata {
   pub identifier: [u8; 4],
 }
 
+/// Entry describing a BSP lump
 #[derive(FromBytes, IntoBytes, KnownLayout, Debug)]
 #[repr(C)]
-pub struct LumpEntry(LumpDescriptor, LumpMetadata);
+pub struct LumpEntry {
+  /// Absolute offset in file
+  offset: u32,
+  /// Length of data
+  length: u32,
+  metadata: LumpMetadata,
+}
 
 /// BSP Header
 #[derive(FromBytes, IntoBytes, KnownLayout, Debug)]
@@ -68,7 +66,11 @@ impl<'a> Bsp<'a> {
 
     // Construct array of (&mut LumpMetadata, Cow<'a, [u8]>) from lump entries
     let lumps = lump_entries.each_mut().map(
-      |&mut LumpEntry(LumpDescriptor { offset, length }, ref mut metadata)| {
+      |&mut LumpEntry {
+         offset,
+         length,
+         ref mut metadata,
+       }| {
         const HEADER_SIZE: usize = size_of::<Header>();
         let (offset, length) = (offset as usize, length as usize);
 
