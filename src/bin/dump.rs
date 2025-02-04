@@ -1,4 +1,4 @@
-use bsp::{Bsp, LUMP_COUNT};
+use bsp::{Bsp, LUMP_DEF_COUNT};
 
 fn main() {
   let Some(path) = std::env::args().nth(1) else {
@@ -12,7 +12,7 @@ fn main() {
   let bsp = Bsp::new(&mut contents).expect("failed to deserialize bsp");
   println!("{bsp:#?}");
 
-  for i in 0..LUMP_COUNT {
+  for i in 0..LUMP_DEF_COUNT {
     let (metadata, lump) = bsp.lump(i);
 
     println!("lump {i}: {} bytes", lump.len());

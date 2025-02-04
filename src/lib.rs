@@ -3,7 +3,8 @@ use std::borrow::Cow;
 use zerocopy::*;
 use zerocopy_derive::*;
 
-pub const LUMP_COUNT: usize = 64;
+/// Lump definition count
+pub const LUMP_DEF_COUNT: usize = 64;
 
 /// BSP lump metadata
 #[derive(FromBytes, IntoBytes, KnownLayout, Debug)]
@@ -35,7 +36,7 @@ pub struct Header {
   /// File format version
   pub version: u32,
   /// Lump definitions
-  pub lump_defs: [LumpDef; LUMP_COUNT],
+  pub lump_defs: [LumpDef; LUMP_DEF_COUNT],
   /// File revision
   pub revision: i32,
 }
@@ -49,7 +50,7 @@ pub struct Bsp<'a> {
   pub identifier: &'a mut [u8; 4],
   /// File format version
   pub version: &'a mut u32,
-  lumps: [Lump<'a>; LUMP_COUNT],
+  lumps: [Lump<'a>; LUMP_DEF_COUNT],
   /// File revision
   pub revision: &'a mut i32,
 }
@@ -97,12 +98,12 @@ impl<'a> Bsp<'a> {
   }
 
   pub fn lump(&self, index: usize) -> &Lump<'a> {
-    assert!(index < LUMP_COUNT);
+    assert!(index < LUMP_DEF_COUNT);
     &self.lumps[index]
   }
 
   pub fn lump_mut(&mut self, index: usize) -> &mut Lump<'a> {
-    assert!(index < LUMP_COUNT);
+    assert!(index < LUMP_DEF_COUNT);
     &mut self.lumps[index]
   }
 }
