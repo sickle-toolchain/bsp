@@ -13,7 +13,9 @@ fn main() {
   println!("{bsp:#?}");
 
   for i in 0..LUMP_COUNT {
-    let lump = bsp.lump(i);
+    let (metadata, lump) = bsp.lump(i);
+
     println!("lump {i}: {} bytes", lump.len());
+    println!("metadata: {metadata:#?}");
   }
 }
