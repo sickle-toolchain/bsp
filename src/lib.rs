@@ -1,4 +1,3 @@
-use std::array;
 use std::borrow::Cow;
 
 use zerocopy::*;
@@ -8,28 +7,31 @@ pub const LUMP_COUNT: usize = 64;
 
 type Lump<'a> = Cow<'a, [u8]>;
 
-#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Debug)]
+/// Entry describing a BSP lump
+#[derive(FromBytes, IntoBytes, KnownLayout, Debug)]
 #[repr(C)]
-pub(crate) struct LumpRange {
+pub(crate) struct LumpDescriptor {
   /// Absolute offset in file
   offset: u32,
   /// Length of data
   length: u32,
 }
 
-/// Entry describing a BSP lump
-#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Debug)]
+#[derive(FromBytes, IntoBytes, KnownLayout, Debug)]
 #[repr(C)]
-pub struct LumpEntry {
-  pub(crate) range: LumpRange,
+pub struct LumpMetadata {
   /// Lump version
   pub version: u32,
   /// Lump identifier
   pub identifier: [u8; 4],
 }
 
+#[derive(FromBytes, IntoBytes, KnownLayout, Debug)]
+#[repr(C)]
+pub struct LumpEntry(LumpDescriptor, LumpMetadata);
+
 /// BSP Header
-#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Debug)]
+#[derive(FromBytes, IntoBytes, KnownLayout, Debug)]
 #[repr(C)]
 pub struct Header {
   /// File format identifier
@@ -47,7 +49,7 @@ pub struct Bsp<'a> {
   pub identifier: &'a mut [u8; 4],
   /// File format version
   pub version: &'a mut u32,
-  lumps: [(&'a LumpEntry, Lump<'a>); LUMP_COUNT],
+  lumps: [(&'a mut LumpMetadata, Lump<'a>); LUMP_COUNT],
   /// Revision number of file
   pub revision: &'a mut i32,
 }
@@ -62,22 +64,22 @@ impl<'a> Bsp<'a> {
         revision,
       },
       data,
-    ) = Header::mut_from_prefix(data.as_mut())?;
+    ) = Header::mut_from_prefix(data)?;
 
-    // Construct array of (&'a LumpEntry, Cow<'a, [u8]>) from lump entries
-    let lumps = array::from_fn(|i| {
-      let entry @ &LumpEntry {
-        range: LumpRange { offset, length },
-        ..
-      } = &lump_entries[i];
+    // Construct array of (&mut LumpMetadata, Cow<'a, [u8]>) from lump entries
+    let lumps = lump_entries.each_mut().map(
+      |&mut LumpEntry(LumpDescriptor { offset, length }, ref mut metadata)| {
+        const HEADER_SIZE: usize = size_of::<Header>();
+        let (offset, length) = (offset as usize, length as usize);
 
-      // Adjust lump entry offset since they're absolute but we're indexing relative to the end of `Header`
-      // TODO: add debug assertions
-      let offset = (offset as usize).saturating_sub(size_of::<Header>());
-      let lump = Cow::from(&data[offset..offset + length as usize]);
+        // Adjust offset by HEADER_SIZE since LumpDescriptor's offset field is absolute offset in file
+        // and we're indexing relative to the end of the header
+        let offset = offset.saturating_sub(HEADER_SIZE);
+        let lump = Cow::from(&data[offset..offset + length]);
 
-      (entry, lump)
-    });
+        (metadata, lump)
+      },
+    );
 
     let bsp = Self {
       identifier,
@@ -88,14 +90,14 @@ impl<'a> Bsp<'a> {
     Ok(bsp)
   }
 
-  pub fn lump(&self, index: usize) -> &Lump {
+  pub fn lump(&self, index: usize) -> &(&'a mut LumpMetadata, Lump<'a>) {
     assert!(index < LUMP_COUNT);
-    &self.lumps[index].1
+    &self.lumps[index]
   }
 
-  pub fn lump_mut(&mut self, index: usize) -> &mut Lump<'a> {
+  pub fn lump_mut(&mut self, index: usize) -> &mut (&'a mut LumpMetadata, Lump<'a>) {
     assert!(index < LUMP_COUNT);
-    &mut self.lumps[index].1
+    &mut self.lumps[index]
   }
 }
 
