@@ -3,7 +3,7 @@
     ~sickle-toolchain/</a>bsp
   </h3>
 
-Zero-cost BSP (de)serialization
+Zero-cost BSP (de)serialization library
 </div>
 
 ##
