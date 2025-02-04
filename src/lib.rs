@@ -74,9 +74,11 @@ impl<'a> Bsp<'a> {
         const HEADER_SIZE: usize = size_of::<Header>();
         let (offset, length) = (offset as usize, length as usize);
 
-        // Adjust offset by HEADER_SIZE since LumpDescriptor's offset field is absolute offset in file
-        // and we're indexing relative to the end of the header
+        // Adjust offset by HEADER_SIZE since LumpDescriptor's offset field is absolute
+        // offset in file and we're indexing relative to the end of the header
         let offset = offset.saturating_sub(HEADER_SIZE);
+
+        assert!((offset + length) <= data.len());
         let lump = Cow::from(&data[offset..offset + length]);
 
         (metadata, lump)
