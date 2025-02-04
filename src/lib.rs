@@ -40,7 +40,7 @@ pub struct Header {
   pub revision: i32,
 }
 
-/// Type representing a lump's metadata and a Clone-on-write smart pointer to the lump's data
+/// Representation of a lump's metadata and Clone-on-write pointer to the data
 pub type Lump<'a> = (&'a mut LumpMetadata, Cow<'a, [u8]>);
 
 /// Representation of a BSP file
