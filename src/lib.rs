@@ -77,7 +77,7 @@ impl<'a> Bsp<'a> {
         const HEADER_SIZE: usize = size_of::<Header>();
         let (offset, length) = (offset as usize, length as usize);
 
-        // Adjust offset by HEADER_SIZE since LumpDescriptor's offset field is absolute
+        // Adjust offset by HEADER_SIZE since LumpDef's offset field is an absolute
         // offset in file and we're indexing relative to the end of the header
         let offset = offset.saturating_sub(HEADER_SIZE);
 
