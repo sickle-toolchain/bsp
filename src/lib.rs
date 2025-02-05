@@ -97,13 +97,23 @@ impl<'a> Bsp<'a> {
     Ok(bsp)
   }
 
-  pub fn lump(&self, index: usize) -> &Lump<'a> {
+  pub fn lump<T>(&self, index: T) -> &Lump<'a>
+  where
+    T: Into<usize>,
+  {
+    let index: usize = index.into();
     assert!(index < LUMP_DEF_COUNT);
+
     &self.lumps[index]
   }
 
-  pub fn lump_mut(&mut self, index: usize) -> &mut Lump<'a> {
+  pub fn lump_mut<T>(&mut self, index: T) -> &mut Lump<'a>
+  where
+    T: Into<usize>,
+  {
+    let index: usize = index.into();
     assert!(index < LUMP_DEF_COUNT);
+
     &mut self.lumps[index]
   }
 }
