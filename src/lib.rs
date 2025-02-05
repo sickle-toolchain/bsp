@@ -97,9 +97,41 @@ impl<'a> Bsp<'a> {
     Ok(bsp)
   }
 
-  pub fn lump<T>(&self, index: T) -> &Lump<'a>
+  pub fn lump_data<T, I>(&self, index: I) -> Result<&T, CastError<&[u8], T>>
   where
-    T: Into<usize>,
+    T: ?Sized + FromBytes + KnownLayout + Immutable,
+    I: Into<usize>,
+  {
+    let data = &self.lump(index).1;
+    T::ref_from_bytes(data)
+  }
+
+  pub fn lump_data_mut<T, I>(&mut self, index: I) -> Result<&mut T, CastError<&mut [u8], T>>
+  where
+    T: ?Sized + FromBytes + IntoBytes + KnownLayout,
+    I: Into<usize>,
+  {
+    let data = &mut self.lump_mut(index).1;
+    T::mut_from_bytes(data.to_mut())
+  }
+
+  pub fn lump_meta<I>(&self, index: I) -> &LumpMetadata
+  where
+    I: Into<usize>,
+  {
+    self.lump(index).0
+  }
+
+  pub fn lump_meta_mut<I>(&mut self, index: I) -> &mut LumpMetadata
+  where
+    I: Into<usize>,
+  {
+    self.lump_mut(index).0
+  }
+
+  pub fn lump<I>(&self, index: I) -> &Lump<'a>
+  where
+    I: Into<usize>,
   {
     let index: usize = index.into();
     assert!(index < LUMP_DEF_COUNT);
@@ -107,9 +139,9 @@ impl<'a> Bsp<'a> {
     &self.lumps[index]
   }
 
-  pub fn lump_mut<T>(&mut self, index: T) -> &mut Lump<'a>
+  pub fn lump_mut<I>(&mut self, index: I) -> &mut Lump<'a>
   where
-    T: Into<usize>,
+    I: Into<usize>,
   {
     let index: usize = index.into();
     assert!(index < LUMP_DEF_COUNT);
