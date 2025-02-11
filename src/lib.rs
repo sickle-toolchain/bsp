@@ -7,7 +7,7 @@ use zerocopy_derive::*;
 pub const LUMP_DEF_COUNT: usize = 64;
 
 /// BSP lump metadata
-#[derive(FromBytes, IntoBytes, KnownLayout, Debug)]
+#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Debug, Clone, Copy)]
 #[repr(C)]
 pub struct LumpMetadata {
   /// Lump version
@@ -17,7 +17,7 @@ pub struct LumpMetadata {
 }
 
 /// BSP lump definition
-#[derive(FromBytes, IntoBytes, KnownLayout, Debug)]
+#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Debug, Clone, Copy)]
 #[repr(C)]
 pub struct LumpDef {
   /// Absolute offset in file
@@ -28,7 +28,7 @@ pub struct LumpDef {
 }
 
 /// BSP file header
-#[derive(FromBytes, IntoBytes, KnownLayout, Debug)]
+#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Debug, Clone)]
 #[repr(C)]
 pub struct Header {
   /// File format identifier
@@ -36,43 +36,32 @@ pub struct Header {
   /// File format version
   pub version: u32,
   /// Lump definitions
-  pub lump_defs: [LumpDef; LUMP_DEF_COUNT],
+  lump_defs: [LumpDef; LUMP_DEF_COUNT],
   /// File revision
   pub revision: i32,
 }
 
-/// Representation of a lump's metadata and Clone-on-write pointer to the data
-pub type Lump<'a> = (&'a mut LumpMetadata, Cow<'a, [u8]>);
+/// Tuple containing clone-on-write smart pointers to a lump's associated data and metadata
+type LumpPair<'a> = (Cow<'a, LumpMetadata>, Cow<'a, [u8]>);
 
 /// Representation of a BSP file
 pub struct Bsp<'a> {
-  /// File format identifier
-  pub identifier: &'a mut [u8; 4],
-  /// File format version
-  pub version: &'a mut u32,
-  lumps: [Lump<'a>; LUMP_DEF_COUNT],
-  /// File revision
-  pub revision: &'a mut i32,
+  /// BSP Header
+  pub header: Cow<'a, Header>,
+  /// Array of [`LUMP_DEF_COUNT`] [`LumpPair`]'s
+  lumps: [LumpPair<'a>; LUMP_DEF_COUNT],
 }
 
 impl<'a> Bsp<'a> {
-  pub fn new(data: &'a mut [u8]) -> Result<Self, CastError<&'a mut [u8], Header>> {
-    let (
-      Header {
-        identifier,
-        version,
-        lump_defs,
-        revision,
-      },
-      data,
-    ) = Header::mut_from_prefix(data)?;
+  pub fn parse(data: &'a [u8]) -> Result<Self, CastError<&'a [u8], Header>> {
+    let (header, data) = Header::ref_from_prefix(data)?;
 
     // Construct array of (&'a mut LumpMetadata, Cow<'a, [u8]>) from lump entries
-    let lumps = lump_defs.each_mut().map(
-      |&mut LumpDef {
+    let lumps = header.lump_defs.each_ref().map(
+      |&LumpDef {
          offset,
          length,
-         ref mut metadata,
+         ref metadata,
        }| {
         const HEADER_SIZE: usize = size_of::<Header>();
         let (offset, length) = (offset as usize, length as usize);
@@ -82,19 +71,47 @@ impl<'a> Bsp<'a> {
         let offset = offset.saturating_sub(HEADER_SIZE);
 
         assert!((offset + length) <= data.len());
-        let lump = Cow::from(&data[offset..offset + length]);
 
-        (metadata, lump)
+        (
+          Cow::Borrowed(metadata),
+          Cow::Borrowed(&data[offset..offset + length]),
+        )
       },
     );
 
     let bsp = Self {
-      identifier,
-      version,
+      header: Cow::Borrowed(header),
       lumps,
-      revision,
     };
     Ok(bsp)
+  }
+
+  pub fn write_to_io<W>(&self, mut writer: W) -> std::io::Result<()>
+  where
+    W: std::io::Write,
+  {
+    const HEADER_SIZE: usize = size_of::<Header>();
+    let mut header = self.header.clone().into_owned();
+
+    // Update lump definitions
+    let _ = self.lumps.iter().zip(header.lump_defs.iter_mut()).fold(
+      // Start at offset HEADER_SIZE
+      HEADER_SIZE,
+      |acc, ((metadata, data), def)| {
+        def.offset = acc as u32;
+        def.length = data.len() as u32;
+        def.metadata = *metadata.as_ref();
+
+        acc + data.len()
+      },
+    );
+
+    // Write data to writer
+    writer.write_all(header.as_bytes())?;
+    for (_, lump) in &self.lumps {
+      writer.write_all(lump)?;
+    }
+    Ok(())
   }
 
   pub fn lump_data<T, I>(&self, index: I) -> Result<&T, CastError<&[u8], T>>
@@ -115,21 +132,21 @@ impl<'a> Bsp<'a> {
     T::mut_from_bytes(data.to_mut())
   }
 
-  pub fn lump_meta<I>(&self, index: I) -> &LumpMetadata
+  pub fn lump_meta<I>(&self, index: I) -> &Cow<'a, LumpMetadata>
   where
     I: Into<usize>,
   {
-    self.lump(index).0
+    &self.lump(index).0
   }
 
-  pub fn lump_meta_mut<I>(&mut self, index: I) -> &mut LumpMetadata
+  pub fn lump_meta_mut<I>(&mut self, index: I) -> &mut Cow<'a, LumpMetadata>
   where
     I: Into<usize>,
   {
-    self.lump_mut(index).0
+    &mut self.lump_mut(index).0
   }
 
-  pub fn lump<I>(&self, index: I) -> &Lump<'a>
+  pub fn lump<I>(&self, index: I) -> &LumpPair<'a>
   where
     I: Into<usize>,
   {
@@ -139,7 +156,7 @@ impl<'a> Bsp<'a> {
     &self.lumps[index]
   }
 
-  pub fn lump_mut<I>(&mut self, index: I) -> &mut Lump<'a>
+  pub fn lump_mut<I>(&mut self, index: I) -> &mut LumpPair<'a>
   where
     I: Into<usize>,
   {
@@ -153,9 +170,9 @@ impl<'a> Bsp<'a> {
 impl std::fmt::Debug for Bsp<'_> {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     f.debug_struct("Bsp")
-      .field("identifier", &self.identifier)
-      .field("version", &self.version)
-      .field("revision", &self.revision)
+      .field("identifier", &self.header.identifier)
+      .field("version", &self.header.version)
+      .field("revision", &self.header.revision)
       // Indicate that we have omitted data (lump entries)
       .finish_non_exhaustive()
   }

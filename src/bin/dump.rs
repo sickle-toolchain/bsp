@@ -7,9 +7,9 @@ fn main() {
   };
 
   println!("reading path: {path}");
-  let mut contents = std::fs::read(path).expect("failed to open file");
+  let contents = std::fs::read(path).expect("failed to open file");
 
-  let bsp = Bsp::new(&mut contents).expect("failed to deserialize bsp");
+  let bsp = Bsp::parse(&contents).expect("failed to deserialize bsp");
   println!("{bsp:#?}");
 
   for i in 0..LUMP_DEF_COUNT {
