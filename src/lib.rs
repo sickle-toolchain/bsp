@@ -41,7 +41,7 @@ pub struct Header {
   pub revision: i32,
 }
 
-/// Tuple containing clone-on-write smart pointers to a lump's associated data and metadata
+/// Tuple containing clone-on-write smart pointers to a lump's metadata and associated data
 type LumpPair<'a> = (Cow<'a, LumpMetadata>, Cow<'a, [u8]>);
 
 /// Representation of a BSP file
