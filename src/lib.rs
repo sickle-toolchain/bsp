@@ -1,6 +1,9 @@
-use std::borrow::Cow;
+use std::{
+    borrow::{Borrow, Cow},
+    cell::{Ref, RefCell, RefMut},
+};
 
-use zerocopy::*;
+use zerocopy::{CastError, FromBytes, IntoBytes};
 use zerocopy_derive::*;
 
 /// Lump definition count
@@ -41,15 +44,15 @@ pub struct Header {
     pub revision: i32,
 }
 
-/// Tuple containing clone-on-write smart pointers to a lump's associated data and metadata
-type LumpPair<'a> = (Cow<'a, LumpMetadata>, Cow<'a, [u8]>);
+// TODO: describe
+type LumpCell<'a> = RefCell<(Cow<'a, LumpMetadata>, Cow<'a, [u8]>)>;
 
 /// Representation of a BSP file
 pub struct Bsp<'a> {
     /// BSP Header
     pub header: Cow<'a, Header>,
     /// Array of [`LUMP_DEF_COUNT`] [`LumpPair`]'s
-    lumps: [LumpPair<'a>; LUMP_DEF_COUNT],
+    lumps: [LumpCell<'a>; LUMP_DEF_COUNT],
 }
 
 impl<'a> Bsp<'a> {
@@ -72,10 +75,10 @@ impl<'a> Bsp<'a> {
 
                 assert!((offset + length) <= data.len());
 
-                (
+                RefCell::new((
                     Cow::Borrowed(metadata),
                     Cow::Borrowed(&data[offset..offset + length]),
-                )
+                ))
             },
         );
 
@@ -94,59 +97,51 @@ impl<'a> Bsp<'a> {
         let mut header = self.header.clone().into_owned();
 
         // Update lump definitions
-        let _ = self.lumps.iter().zip(header.lump_defs.iter_mut()).fold(
+        let _ = self.lump_iter().zip(header.lump_defs.iter_mut()).fold(
             // Start at offset HEADER_SIZE
             HEADER_SIZE,
             |acc, ((metadata, data), def)| {
                 def.offset = acc as u32;
-                def.length = data.len() as u32;
-                def.metadata = *metadata.as_ref();
+                def.length = data.borrow().len() as u32;
+                def.metadata = *metadata.borrow().as_ref();
 
-                acc + data.len()
+                def.offset as usize + def.length as usize
             },
         );
 
         // Write data to writer
         writer.write_all(header.as_bytes())?;
-        for (_, lump) in &self.lumps {
-            writer.write_all(lump)?;
+        for lump in &self.lumps {
+            let cell = lump.borrow();
+            writer.write_all(&cell.1)?;
         }
         Ok(())
     }
 
-    pub fn lump_data<T, I>(&self, index: I) -> Result<&T, CastError<&[u8], T>>
-    where
-        T: ?Sized + FromBytes + KnownLayout + Immutable,
-        I: Into<usize>,
-    {
-        let data = &self.lump(index).1;
-        T::ref_from_bytes(data)
-    }
+    // TODO: figure out if we can reintroduce casting helper functions
+    // they were quite convenient, but i was not able to implement them
+    // following the interior mutability changes
 
-    pub fn lump_data_mut<T, I>(&mut self, index: I) -> Result<&mut T, CastError<&mut [u8], T>>
-    where
-        T: ?Sized + FromBytes + IntoBytes + KnownLayout,
-        I: Into<usize>,
-    {
-        let data = &mut self.lump_mut(index).1;
-        T::mut_from_bytes(data.to_mut())
-    }
-
-    pub fn lump_meta<I>(&self, index: I) -> &Cow<'a, LumpMetadata>
+    pub fn lump<I>(&self, index: I) -> (Ref<'_, Cow<'a, LumpMetadata>>, Ref<'_, Cow<'a, [u8]>>)
     where
         I: Into<usize>,
     {
-        &self.lump(index).0
+        let cell = self.lump_cell(index);
+        Ref::map_split(cell.borrow(), |v| (&v.0, &v.1))
     }
 
-    pub fn lump_meta_mut<I>(&mut self, index: I) -> &mut Cow<'a, LumpMetadata>
+    pub fn lump_mut<I>(
+        &self,
+        index: I,
+    ) -> (RefMut<'_, Cow<'a, LumpMetadata>>, RefMut<'_, Cow<'a, [u8]>>)
     where
         I: Into<usize>,
     {
-        &mut self.lump_mut(index).0
+        let cell = self.lump_cell(index);
+        RefMut::map_split(cell.borrow_mut(), |v| (&mut v.0, &mut v.1))
     }
 
-    pub fn lump<I>(&self, index: I) -> &LumpPair<'a>
+    fn lump_cell<I>(&self, index: I) -> &LumpCell<'a>
     where
         I: Into<usize>,
     {
@@ -156,14 +151,12 @@ impl<'a> Bsp<'a> {
         &self.lumps[index]
     }
 
-    pub fn lump_mut<I>(&mut self, index: I) -> &mut LumpPair<'a>
-    where
-        I: Into<usize>,
-    {
-        let index: usize = index.into();
-        assert!(index < LUMP_DEF_COUNT);
-
-        &mut self.lumps[index]
+    fn lump_iter(
+        &self,
+    ) -> impl Iterator<Item = (Ref<'_, Cow<'a, LumpMetadata>>, Ref<'_, Cow<'a, [u8]>>)> {
+        self.lumps
+            .iter()
+            .map(|v| Ref::map_split(v.borrow(), |e| (&e.0, &e.1)))
     }
 }
 
