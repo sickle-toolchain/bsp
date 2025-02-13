@@ -132,7 +132,7 @@ impl<'a> Bsp<'a> {
         Ref::filter_map(cell.borrow(), |v| match T::ref_from_bytes(&v.1) {
             Ok(o) => Some(o),
             Err(e) => {
-                // TODO: we sadly throw away type information from the error here since
+                // TODO: we sadly throw away information from the error here since
                 // this wouldn't work otherwise. It would be nice to see if this can
                 // be solved in the future.
                 //
@@ -157,7 +157,7 @@ impl<'a> Bsp<'a> {
             match T::mut_from_bytes(v.1.to_mut()) {
                 Ok(o) => Some(o),
                 Err(e) => {
-                    // TODO: we sadly throw away type information from the error here since
+                    // TODO: we sadly throw away information from the error here since
                     // this wouldn't work otherwise. It would be nice to see if this can
                     // be solved in the future.
                     //
