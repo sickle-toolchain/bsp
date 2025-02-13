@@ -1,9 +1,10 @@
 use std::{
     borrow::{Borrow, Cow},
     cell::{Ref, RefCell, RefMut},
+    mem::MaybeUninit,
 };
 
-use zerocopy::{CastError, FromBytes, IntoBytes};
+use zerocopy::{CastError, FromBytes, Immutable, IntoBytes, KnownLayout};
 use zerocopy_derive::*;
 
 /// Lump definition count
@@ -46,6 +47,9 @@ pub struct Header {
 
 // TODO: describe
 type LumpCell<'a> = RefCell<(Cow<'a, LumpMetadata>, Cow<'a, [u8]>)>;
+
+type LumpRef<'a, 'b> = (Ref<'b, Cow<'a, LumpMetadata>>, Ref<'b, Cow<'a, [u8]>>);
+type LumpRefMut<'a, 'b> = (RefMut<'b, Cow<'a, LumpMetadata>>, RefMut<'b, Cow<'a, [u8]>>);
 
 /// Representation of a BSP file
 pub struct Bsp<'a> {
@@ -118,11 +122,57 @@ impl<'a> Bsp<'a> {
         Ok(())
     }
 
-    // TODO: figure out if we can reintroduce casting helper functions
-    // they were quite convenient, but i was not able to implement them
-    // following the interior mutability changes
+    pub fn lump_cast<T, I>(&self, index: I) -> Result<Ref<'_, T>, CastError<(), T>>
+    where
+        T: ?Sized + FromBytes + KnownLayout + Immutable,
+        I: Into<usize>,
+    {
+        let cell = self.lump_cell(index);
+        let mut err = MaybeUninit::uninit();
+        Ref::filter_map(cell.borrow(), |v| match T::ref_from_bytes(&v.1) {
+            Ok(o) => Some(o),
+            Err(e) => {
+                // TODO: we sadly throw away type information from the error here since
+                // this wouldn't work otherwise. It would be nice to see if this can
+                // be solved in the future.
+                //
+                // If we can't resolve this, then properly document it and use a self-describing
+                // type for the src such as `OmittedSrc`
+                err.write(e.map_src(|_| ()));
+                None
+            }
+        })
+        // SAFETY: if we're Err(_) then `err` will be initialized
+        .map_err(|_| unsafe { err.assume_init() })
+    }
 
-    pub fn lump<I>(&self, index: I) -> (Ref<'_, Cow<'a, LumpMetadata>>, Ref<'_, Cow<'a, [u8]>>)
+    pub fn lump_cast_mut<T, I>(&self, index: I) -> Result<RefMut<'_, T>, CastError<(), T>>
+    where
+        T: ?Sized + FromBytes + IntoBytes + KnownLayout + Immutable,
+        I: Into<usize>,
+    {
+        let cell = self.lump_cell(index);
+        let mut err = MaybeUninit::uninit();
+        RefMut::filter_map(cell.borrow_mut(), |v| {
+            match T::mut_from_bytes(v.1.to_mut()) {
+                Ok(o) => Some(o),
+                Err(e) => {
+                    // TODO: we sadly throw away type information from the error here since
+                    // this wouldn't work otherwise. It would be nice to see if this can
+                    // be solved in the future.
+                    //
+                    // If we can't resolve this, then properly document it and use a self-describing
+                    // type for the src such as `OmittedSrc`
+                    err.write(e.map_src(|_| ()));
+                    None
+                }
+            }
+        })
+        // SAFETY: if we're Err(_) then `err` will be initialized
+        .map_err(|_| unsafe { err.assume_init() })
+    }
+
+    pub fn lump<I>(&self, index: I) -> LumpRef<'a, '_>
     where
         I: Into<usize>,
     {
@@ -130,10 +180,7 @@ impl<'a> Bsp<'a> {
         Ref::map_split(cell.borrow(), |v| (&v.0, &v.1))
     }
 
-    pub fn lump_mut<I>(
-        &self,
-        index: I,
-    ) -> (RefMut<'_, Cow<'a, LumpMetadata>>, RefMut<'_, Cow<'a, [u8]>>)
+    pub fn lump_mut<I>(&self, index: I) -> LumpRefMut<'a, '_>
     where
         I: Into<usize>,
     {
