@@ -23,7 +23,7 @@ pub struct LumpMetadata {
 /// BSP lump definition
 #[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Debug, Clone, Copy)]
 #[repr(C)]
-pub struct LumpDef {
+pub struct LumpDefinition {
     /// Absolute offset in file
     offset: u32,
     /// Length of data
@@ -40,7 +40,7 @@ pub struct Header {
     /// File format version
     pub version: u32,
     /// Lump definitions
-    lump_defs: [LumpDef; LUMP_DEF_COUNT],
+    lump_defs: [LumpDefinition; LUMP_DEF_COUNT],
     /// File revision
     pub revision: i32,
 }
@@ -63,9 +63,9 @@ impl<'a> Bsp<'a> {
     pub fn parse(data: &'a [u8]) -> Result<Self, CastError<&'a [u8], Header>> {
         let (header, data) = Header::ref_from_prefix(data)?;
 
-        // Construct array of (&'a mut LumpMetadata, Cow<'a, [u8]>) from lump entries
+        // Construct array of `Lump` from lump definitions
         let lumps = header.lump_defs.each_ref().map(
-            |&LumpDef {
+            |&LumpDefinition {
                  offset,
                  length,
                  ref metadata,
@@ -73,7 +73,7 @@ impl<'a> Bsp<'a> {
                 const HEADER_SIZE: usize = size_of::<Header>();
                 let (offset, length) = (offset as usize, length as usize);
 
-                // Adjust offset by HEADER_SIZE since LumpDef's offset field is an absolute
+                // Adjust offset by HEADER_SIZE since `LumpDefinition::offset` is an absolute
                 // offset in file and we're indexing relative to the end of the header
                 let offset = offset.saturating_sub(HEADER_SIZE);
 
