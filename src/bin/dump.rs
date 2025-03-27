@@ -1,4 +1,6 @@
-use bsp::{Bsp, LUMP_DEF_COUNT};
+use std::cell::Ref;
+
+use bsp::{Bsp, Lump, LUMP_DEF_COUNT};
 
 fn main() {
     let Some(path) = std::env::args().nth(1) else {
@@ -13,9 +15,9 @@ fn main() {
     println!("{bsp:#?}");
 
     for i in 0..LUMP_DEF_COUNT {
-        let (metadata, lump) = bsp.lump(i);
+        let Lump { metadata, data } = &*bsp.lump(i);
 
-        println!("lump {i}: {} bytes", lump.len());
+        println!("lump {i}: {} bytes", data.len());
         println!("metadata: {metadata:#?}");
     }
 }
